@@ -33,19 +33,12 @@ from apache_beam.options.pipeline_options import PipelineOptions
 from apache_beam.options.pipeline_options import SetupOptions
 from apache_beam.options.pipeline_options import StandardOptions
 
+INPUT_TOPIC='projects/monster-datalake-dev-297a/topics/tigers-tst'
+OUTPUT_BUCKET='gs://bck-msr-datalake-dev-importtest/radek-tst/job.json'
 
 def create_pipeline(argv=None):
     """Build and run the pipeline."""
     parser = argparse.ArgumentParser()
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument(
-      '--input_topic',
-      help=('Input PubSub topic of the form '
-            '"projects/<PROJECT>/topics/<TOPIC>".'))
-    group.add_argument(
-      '--input_subscription',
-      help=('Input PubSub subscription of the form '
-            '"projects/<PROJECT>/subscriptions/<SUBSCRIPTION>."'))
     known_args, pipeline_args = parser.parse_known_args(argv)
 
     # We use the save_main_session option because one or more DoFn's in this
@@ -53,20 +46,24 @@ def create_pipeline(argv=None):
     pipeline_options = PipelineOptions(pipeline_args)
     pipeline_options.view_as(SetupOptions).save_main_session = True
     pipeline_options.view_as(StandardOptions).streaming = True
-    pipeline = beam.Pipeline(options=pipeline_options)
-    jobs_in_bytes = (pipeline
-                | beam.io.ReadFromPubSub(topic=known_args.input_topic)
-                .with_output_types(bytes))
-    jobs_in_json = jobs_in_bytes | 'Convert to json' >> beam.Map(lambda x: json.loads(x))
+    return beam.Pipeline(options=pipeline_options)
 
-    jobs_in_json | beam.io.WriteToText('gs://bck-msr-datalake-dev-importtest/radek-tst/job.json')
+def read_from_pubsub(pipeline):
+    return (pipeline | "read from pubsub" >> beam.io.ReadFromPubSub(topic=INPUT_TOPIC).with_output_types(bytes))
 
-    result = pipeline.run()
-    result.wait_until_finish()
+def convert_to_json(jobs_in_bytes):
+    return jobs_in_bytes | 'Convert to json' >> beam.Map(lambda x: json.loads(x))
 
+def save_to_gs(jobs_in_json):
+    jobs_in_json | beam.io.WriteToText(OUTPUT_BUCKET)
 
 def start(argv=None):
-    create_pipeline(argv)
+    pipeline = create_pipeline(argv)
+    jobs_in_bytes = read_from_pubsub(pipeline)
+    jobs_in_json = convert_to_json(jobs_in_bytes)
+    save_to_gs(jobs_in_json)
+    result = pipeline.run()
+    result.wait_until_finish()
 
 if __name__ == '__main__':
   logging.getLogger().setLevel(logging.INFO)
