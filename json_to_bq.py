@@ -16,7 +16,7 @@ def create_pipeline():
     p = beam.Pipeline(options=pipeline_options)
 
 def read_jobs_from_pubsub(p):
-    return (p | beam.io.ReadFromPubSub(
+    return (p | "read from topic" >> beam.io.ReadFromPubSub(
         topic="projects/monster-datalake-dev-297a/topics/tigers-tst")
         .with_output_types(bytes))
 
@@ -32,6 +32,7 @@ def run():
     jobs_in_bytes = read_jobs_from_pubsub(p)
     jobs_in_json = convert_to_json(jobs_in_bytes)
     save_to_gs(jobs_in_json)
+    p.run()
 
 if __name__ == '__main__':
   run()
