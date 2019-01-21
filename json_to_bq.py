@@ -17,7 +17,7 @@ def create_pipeline():
 
 def read_jobs_from_pubsub(p):
     return (p | beam.io.ReadFromPubSub(
-        subscription="projects/monster-datalake-dev-297a/subscriptions/tigers-sub-tst")
+        topic="projects/monster-datalake-dev-297a/topics/tigers-tst")
         .with_output_types(bytes))
 
 
