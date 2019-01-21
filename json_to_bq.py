@@ -18,8 +18,6 @@ def create_pipeline():
 def read_jobs_from_pubsub(p):
     return (p | "read from topic" >> beam.io.ReadFromPubSub(
         topic="projects/monster-datalake-dev-297a/topics/tigers-tst")
-        .with_output_types(bytes))
-
 
 def convert_to_json(jobs_in_bytes):
     return jobs_in_bytes | 'Convert to json' >> beam.Map(lambda x: json.loads(x))
