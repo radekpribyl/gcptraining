@@ -31,9 +31,11 @@ from apache_beam.options.pipeline_options import PipelineOptions
 from apache_beam.options.pipeline_options import SetupOptions
 from apache_beam.options.pipeline_options import StandardOptions
 
+INPUT_FILE='gs://mj-decompressed/decompressed/1'
 INPUT_TOPIC='projects/monster-datalake-dev-297a/topics/tigers-tst'
 OUTPUT_BUCKET='gs://bck-msr-datalake-dev-importtest/radek-tst/job.json'
 OUTPUT_TABLE='monster-datalake-dev-297a:tiger_dataset.radek_tst'
+STREAMING = True
 
 logger = logging.getLogger('job2_beam')
 
@@ -77,11 +79,15 @@ def create_pipeline(argv=None):
     # workflow rely on global context (e.g., a module imported at module level).
     pipeline_options = PipelineOptions(pipeline_args)
     pipeline_options.view_as(SetupOptions).save_main_session = True
-    pipeline_options.view_as(StandardOptions).streaming = True
+    if STREAMING:
+        pipeline_options.view_as(StandardOptions).streaming = True
     return beam.Pipeline(options=pipeline_options)
 
 def read_from_pubsub(pipeline):
-    return (pipeline | "read from pubsub" >> beam.io.ReadFromPubSub(topic=INPUT_TOPIC))#.with_output_types(bytes))
+    return (pipeline | "Read from pubsub" >> beam.io.ReadFromPubSub(topic=INPUT_TOPIC))#.with_output_types(bytes))
+
+def read_from_gsfile(pipeline):
+    return (pipeline | "Read from file" >> beam.io.ReadFromText(INPUT_FILE))
 
 def convert_to_json(jobs_in_bytes):
     return jobs_in_bytes | 'Convert to json' >> beam.Map(lambda x: [json.loads(x)])
