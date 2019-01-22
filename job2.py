@@ -24,11 +24,8 @@ import argparse
 import logging
 import json
 
-from past.builtins import unicode
-
 import apache_beam as beam
 import apache_beam.transforms.window as window
-from apache_beam.beam.io import parse_table_schema_from_json, TableRowJsonCoder
 from apache_beam.examples.wordcount import WordExtractingDoFn
 from apache_beam.options.pipeline_options import PipelineOptions
 from apache_beam.options.pipeline_options import SetupOptions
@@ -38,12 +35,15 @@ INPUT_TOPIC='projects/monster-datalake-dev-297a/topics/tigers-tst'
 OUTPUT_BUCKET='gs://bck-msr-datalake-dev-importtest/radek-tst/job.json'
 OUTPUT_TABLE='monster-datalake-dev-297a:tiger_dataset.radek_tst'
 
+logger = logging.getLogger('job2_beam')
+
 class ConverToBqRecordDoFn(beam.DoFn):
     
     schema = {"postingid": (1,0), "jobtitle": (1,0), "jobbody": (0,0),  "company": (0,1), "fields_company": {"name": (0,0), "normalizedcompanyid":(0,0), "normalizedcompanyname": (0,0)}, "generateddate": (0,0), "jobadpricingtypeid": (0,0)}
 
     def process(self, element):
-        table_row = self._create_dict_from(self.schema, element)
+        element_dict = json.loads(element)
+        table_row = self._create_dict_from(self.schema, element_dict)
         if table_row:
             yield table_row
         else:
@@ -61,11 +61,12 @@ class ConverToBqRecordDoFn(beam.DoFn):
                 else:
                     result[key]=element_dict[key]
             elif required:
+                print 'Missing required field'
+                logger.info('Missing required field')
                 return
             else:
                 result[key]=None
         return result
-
 
 def create_pipeline(argv=None):
     """Build and run the pipeline."""
@@ -80,10 +81,10 @@ def create_pipeline(argv=None):
     return beam.Pipeline(options=pipeline_options)
 
 def read_from_pubsub(pipeline):
-    return (pipeline | "read from pubsub" >> beam.io.ReadFromPubSub(topic=INPUT_TOPIC).with_output_types(bytes))
+    return (pipeline | "read from pubsub" >> beam.io.ReadFromPubSub(topic=INPUT_TOPIC))#.with_output_types(bytes))
 
 def convert_to_json(jobs_in_bytes):
-    return jobs_in_bytes | 'Convert to json' >> beam.Map(lambda x: json.loads(x))
+    return jobs_in_bytes | 'Convert to json' >> beam.Map(lambda x: [json.loads(x)])
 
 def create_bqrow_record(jobs_in_json):
     return jobs_in_json | 'Create Bq Record' >> beam.ParDo(ConverToBqRecordDoFn())
@@ -99,8 +100,10 @@ def save_to_bigquery(job_rows):
 def start(argv=None):
     pipeline = create_pipeline(argv)
     jobs_in_bytes = read_from_pubsub(pipeline)
-    jobs_in_json = convert_to_json(jobs_in_bytes)
-    save_to_gs(jobs_in_json)
+    #jobs_in_json = convert_to_json(jobs_in_bytes)
+    #save_to_gs(jobs_in_bytes)
+    bqrows = create_bqrow_record(jobs_in_bytes)
+    save_to_bigquery(bqrows)
     result = pipeline.run()
     result.wait_until_finish()
 
