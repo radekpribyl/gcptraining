@@ -28,6 +28,7 @@ from past.builtins import unicode
 
 import apache_beam as beam
 import apache_beam.transforms.window as window
+from apache_beam.beam.io import parse_table_schema_from_json, TableRowJsonCoder
 from apache_beam.examples.wordcount import WordExtractingDoFn
 from apache_beam.options.pipeline_options import PipelineOptions
 from apache_beam.options.pipeline_options import SetupOptions
@@ -35,6 +36,36 @@ from apache_beam.options.pipeline_options import StandardOptions
 
 INPUT_TOPIC='projects/monster-datalake-dev-297a/topics/tigers-tst'
 OUTPUT_BUCKET='gs://bck-msr-datalake-dev-importtest/radek-tst/job.json'
+OUTPUT_TABLE='monster-datalake-dev-297a:tiger_dataset.radek_tst'
+
+class ConverToBqRecordDoFn(beam.DoFn):
+    
+    schema = {"postingid": (1,0), "jobtitle": (1,0), "jobbody": (0,0),  "company": (0,1), "fields_company": {"name": (0,0), "normalizedcompanyid":(0,0), "normalizedcompanyname": (0,0)}, "generateddate": (0,0), "jobadpricingtypeid": (0,0)}
+
+    def process(self, element):
+        table_row = self._create_dict_from(self.schema, element)
+        if table_row:
+            yield table_row
+        else:
+            return
+
+    def _create_dict_from(self, schema_dict, element_dict):
+        result = {}
+        for key, value in schema_dict.iteritems():
+            if key.startswith('fields_'):
+                continue
+            required, nested = value
+            if key in element_dict:
+                if nested:
+                    result[key]=self._create_dict_from(self.schema["fields_"+key], element_dict[key])
+                else:
+                    result[key]=element_dict[key]
+            elif required:
+                return
+            else:
+                result[key]=None
+        return result
+
 
 def create_pipeline(argv=None):
     """Build and run the pipeline."""
@@ -54,8 +85,16 @@ def read_from_pubsub(pipeline):
 def convert_to_json(jobs_in_bytes):
     return jobs_in_bytes | 'Convert to json' >> beam.Map(lambda x: json.loads(x))
 
+def create_bqrow_record(jobs_in_json):
+    return jobs_in_json | 'Create Bq Record' >> beam.ParDo(ConverToBqRecordDoFn())
+
 def save_to_gs(jobs_in_json):
     jobs_in_json | beam.io.WriteToText(OUTPUT_BUCKET)
+
+def save_to_bigquery(job_rows):
+    job_rows | 'Write to Bigquery' >> beam.io.WriteToBigQuery(
+        OUTPUT_TABLE,
+        write_disposition=beam.io.BigQueryDisposition.WRITE_APPEND)
 
 def start(argv=None):
     pipeline = create_pipeline(argv)
